@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Симулятор ОТО — диспетчеризация техобслуживания ВС</title>
+<style>
+  :root{
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --line:#334155;
+    --text:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --ok:#22c55e; --warn:#f59e0b; --bad:#ef4444;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text)}
+  header{display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+  header h1{font-size:15px;margin:0;font-weight:600}
+  .controls{display:flex;gap:8px;align-items:center;margin-left:auto;flex-wrap:wrap}
+  button{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer;font-size:13px}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);color:#062033;border-color:var(--accent);font-weight:600}
+  button.ok{background:var(--ok);color:#052e16;border-color:var(--ok)}
+  button.bad{background:var(--bad);color:#fff;border-color:var(--bad)}
+  select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px}
+  .chk{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--muted)}
+  .main{display:grid;grid-template-columns:1fr 370px;gap:12px;padding:12px;height:calc(100vh - 58px)}
+  .map-wrap{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;min-height:420px}
+  canvas{width:100%;height:100%;display:block}
+  .legend{position:absolute;top:10px;left:10px;background:rgba(15,23,42,.88);border:1px solid var(--line);border-radius:10px;padding:8px 11px;font-size:12px;line-height:1.7;z-index:2}
+  .legend .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  .clock{position:absolute;top:10px;right:12px;background:rgba(15,23,42,.88);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:12.5px;z-index:2}
+  .clock b{color:var(--accent)}
+  aside{display:flex;flex-direction:column;gap:10px;overflow:hidden}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;overflow:auto}
+  .panel h2{font-size:12px;margin:0 0 8px;color:var(--accent);text-transform:uppercase;letter-spacing:.5px}
+  .panel.flex1{flex:1.3}.panel.flex2{flex:1}.panel.flex3{flex:.9}
+  .req{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px;font-size:12.5px;cursor:pointer}
+  .req.selected{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .req .top{display:flex;justify-content:space-between;align-items:center;gap:6px;font-weight:600}
+  .badge{font-size:10.5px;padding:2px 7px;border-radius:20px;background:var(--panel);border:1px solid var(--line);white-space:nowrap}
+  .badge.pending{color:var(--warn);border-color:var(--warn)}
+  .badge.assigned,.badge.moving{color:var(--accent);border-color:var(--accent)}
+  .badge.working{color:var(--warn);border-color:var(--warn)}
+  .badge.done{color:var(--ok);border-color:var(--ok)}
+  .badge.rejected,.badge.noagent{color:var(--bad);border-color:var(--bad)}
+  .req .btns{display:flex;gap:6px;margin-top:8px}
+  .req .btns button{flex:1;padding:5px 8px;font-size:12px}
+  .notif{background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px;padding:8px;margin-bottom:8px;font-size:12.5px}
+  .notif .who{font-weight:600;color:var(--accent);font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+  .notif .btns{display:flex;gap:6px;margin-top:8px}
+  .notif .btns button{flex:1;padding:5px 8px;font-size:12px}
+  .agent-row{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:12.5px;border-bottom:1px solid var(--line)}
+  .agent-row:last-child{border-bottom:none}
+  .avatar{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+  .st{font-size:11px;padding:1px 7px;border-radius:20px;margin-left:auto;white-space:nowrap}
+  .st.free{background:rgba(34,197,94,.15);color:var(--ok)}
+  .st.assigned,.st.moving{background:rgba(56,189,248,.15);color:var(--accent)}
+  .st.working{background:rgba(245,158,11,.15);color:var(--warn)}
+  .stats{display:flex;gap:6px;flex-wrap:wrap;font-size:11.5px}
+  .stat{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:4px 9px;text-align:center}
+  .stat b{display:block;font-size:15px}
+  .log{font-size:11.5px;color:var(--muted);line-height:1.55}
+  .log .t{color:var(--accent)}
+  details.alg{font-size:12px;color:var(--muted);line-height:1.6}
+  details.alg summary{cursor:pointer;color:var(--accent);font-weight:600}
+  @media(max-width:960px){.main{grid-template-columns:1fr;height:auto}.map-wrap{height:62vh}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🛫 Симулятор Аэро-СофИза — диспетчеризация техобслуживания ВС</h1>
+  <div class="controls">
+    <select id="sel-stand">
+      <option value="S1">Стоянка 1</option><option value="S2">Стоянка 2</option>
+      <option value="S3">Стоянка 3</option><option value="S4">Стоянка 4</option>
+      <option value="S5">Стоянка 5</option><option value="S6">Стоянка 6</option>
+      <option value="S7">Стоянка 7 (дальняя)</option><option value="S8">Стоянка 8 (дальняя)</option>
+    </select>
+    <select id="sel-fault">
+      <option>Электрика</option><option>Двигатель</option><option>Авионика</option>
+      <option>Гидравлика</option><option>Шасси</option><option>Универсальная</option>
+    </select>
+    <button class="primary" onclick="manualRequest()">Создать заявку</button>
+    <button onclick="randomRequest()">🎲 Случайная</button>
+    <label class="chk"><input type="checkbox" id="auto" onchange="toggleAuto()"> Авто</label>
+    <select id="speed" onchange="setSpeed(this.value)">
+      <option value="1">1×</option><option value="2">2×</option>
+      <option value="5" selected>5×</option><option value="10">10×</option>
+    </select>
+    <button onclick="resetSim()">Сброс</button>
+  </div>
+</header>
+
+<div class="main">
+  <div class="map-wrap">
+    <canvas id="map"></canvas>
+    <div class="legend">
+      <div><span class="dot" style="background:#e67e22"></span>электрик</div>
+      <div><span class="dot" style="background:#3b82f6"></span>механик</div>
+      <div><span class="dot" style="background:#a855f7"></span>авионик</div>
+      <div><span class="dot" style="background:#14b8a6"></span>гидравлик</div>
+      <div><span class="dot" style="background:#ec4899"></span>универсал</div>
+      <div style="margin-top:6px;border-top:1px solid var(--line);padding-top:6px">
+        <span class="dot" style="background:#22c55e"></span>свободен<br>
+        <span class="dot" style="background:#38bdf8"></span>в пути / ждёт<br>
+        <span class="dot" style="background:#f59e0b"></span>на объекте
+      </div>
+    </div>
+    <div class="clock">⏱ <b id="clock">00:00</b> · <span id="speed-label">5×</span></div>
+  </div>
+
+  <aside>
+    <div class="panel flex1">
+      <h2>Диспетчер — заявки</h2>
+      <div id="dispatcher-list"></div>
+    </div>
+    <div class="panel flex2">
+      <h2>Корпоративный бот / приложение — уведомления сотрудникам</h2>
+      <div id="notif-list"></div>
+    </div>
+    <div class="panel">
+      <h2>Сотрудники ОТО</h2>
+      <div id="agents-list"></div>
+    </div>
+    <div class="panel">
+      <h2>Статистика</h2>
+      <div class="stats">
+        <div class="stat"><b id="st-total">0</b>заявок</div>
+        <div class="stat"><b id="st-assigned">0</b>назначено</div>
+        <div class="stat"><b id="st-done">0</b>выполнено</div>
+        <div class="stat"><b id="st-rejected">0</b>отклонено</div>
+        <div class="stat"><b id="st-noagent">0</b>без сотрудника</div>
+      </div>
+    </div>
+    <div class="panel flex3">
+      <h2>Журнал событий</h2>
+      <div class="log" id="log-list"></div>
+    </div>
+    <details class="alg">
+      <summary>ℹ️ Как работает алгоритм</summary>
+      <p>При поступлении заявки (стоянка ВС + тип неисправности) диспетчер ищет среди <b>свободных</b> сотрудников тех, чья квалификация соответствует неисправности, считает время в пути (расстояние ÷ скорость 45 м/мин) и выбирает <b>ближайшего</b>, у которого путь ≤ 15 минут. Если таких нет — заявка помечается «без сотрудника». Назначенному сотруднику приходит уведомление (бот), он подтверждает выход, движется по маршруту, выполняет ремонт и снова становится свободным.</p>
+    </details>
+  </aside>
+</div>
+
+<script>
+const canvas = document.getElementById('map');
+const ctx = canvas.getContext('2d');
+const W = 1200, H = 700;
+canvas.width = W; canvas.height = H;
+
+const CONFIG = {
+  speed: 45,        // м/мин — скорость передвижения сотрудника
+  maxTime: 15,       // мин — лимит времени в пути
+  timeScale: 5,      // множитель скорости симуляции
+  nearRadius: 250,   // м — «ВС рядом с сотрудником»
+};
+
+const POINTS = {
+  TC:     {x:110,  y:620, label:'Технический центр', kind:'base'},
+  Hangar: {x:1090, y:620, label:'Ангар', kind:'base'},
+  S1: {x:150,  y:300, label:'Стоянка 1', kind:'stand'},
+  S2: {x:260,  y:300, label:'Стоянка 2', kind:'stand'},
+  S3: {x:370,  y:300, label:'Стоянка 3', kind:'stand'},
+  S4: {x:480,  y:300, label:'Стоянка 4', kind:'stand'},
+  S5: {x:590,  y:300, label:'Стоянка 5', kind:'stand'},
+  S6: {x:700,  y:300, label:'Стоянка 6', kind:'stand'},
+  S7: {x:1050, y:300, label:'Стоянка 7 (дальняя)', kind:'stand'},
+  S8: {x:1050, y:420, label:'Стоянка 8 (дальняя)', kind:'stand'},
+};
+
+const FAULTS = {
+  'Электрика':     {qual:'электрик',  work:6},
+  'Двигатель':     {qual:'механик',   work:10},
+  'Авионика':      {qual:'авионик',   work:8},
+  'Гидравлика':    {qual:'гидравлик', work:7},
+  'Шасси':         {qual:'механик',   work:9},
+  'Универсальная': {qual:'любой',     work:5},
+};
+
+const QUAL_COLORS = {
+  'электрик':'#e67e22', 'механик':'#3b82f6', 'авионик':'#a855f7',
+  'гидравлик':'#14b8a6', 'универсал':'#ec4899',
+};
+
+let agents = [
+  {id:1, name:'Иванов',   qual:'электрик',  home:'TC',     x:110,  y:620, status:'free', target:null, workLeft:0, color:QUAL_COLORS['электрик']},
+  {id:2, name:'Петров',   qual:'механик',   home:'TC',     x:110,  y:620, status:'free', target:null, workLeft:0, color:QUAL_COLORS['механик']},
+  {id:3, name:'Сидоров',  qual:'авионик',   home:'TC',     x:110,  y:620, status:'free', target:null, workLeft:0, color:QUAL_COLORS['авионик']},
+  {id:4, name:'Козлов',   qual:'гидравлик', home:'Hangar', x:1090, y:620, status:'free', target:null, workLeft:0, color:QUAL_COLORS['гидравлик']},
+  {id:5, name:'Смирнова', qual:'универсал', home:'TC',     x:110,  y:620, status:'free', target:null, workLeft:0, color:QUAL_COLORS['универсал']},
+  {id:6, name:'Волков',   qual:'механик',   home:'Hangar', x:1090, y:620, status:'free', target:null, workLeft:0, color:QUAL_COLORS['механик']},
+];
+
+let requests = [];
+let notifications = [];
+let logs = [];
+let nextId = 1;
+let simTime = 0;
+let selectedReq = null;
+let auto = false;
+let autoTimer = null;
+const stats = {total:0, assigned:0, rejected:0, noagent:0, done:0};
+
+/* ---------- helpers ---------- */
+function fmt(min){
+  const m = Math.floor(min), s = Math.round((min - m) * 60);
+  return m + ':' + String(s).padStart(2, '0');
+}
+function log(msg){
+  logs.push({t: simTime, msg: msg});
+  if (logs.length > 60) logs.shift();
+  renderLog();
+}
+function addNotification(agent, text, req){
+  notifications.push({agent: agent, text: text, req: req, time: simTime});
+  if (notifications.length > 30) notifications.shift();
+  renderNotifications();
+}
+
+/* ---------- core algorithm ---------- */
+function findBest(req){
+  const stand = POINTS[req.stand];
+  const need = FAULTS[req.fault].qual;
+  let best = null;
+  for (const a of agents){
+    if (a.status !== 'free') continue;
+    if (need !== 'любой' && a.qual !== need) continue;
+    const d = Math.hypot(a.x - stand.x, a.y - stand.y);
+    const t = d / CONFIG.speed;
+    if (t <= CONFIG.maxTime && (!best || t < best.time)) best = {agent: a, time: t, dist: d};
+  }
+  return best;
+}
+
+/* ---------- request lifecycle ---------- */
+function createRequest(stand, fault){
+  const req = {id: nextId++, stand: stand, fault: fault, state: 'pending',
+               agent: null, time: null, dist: null, created: simTime, workLeft: 0};
+  requests.push(req);
+  stats.total++;
+  const best = findBest(req);
+  if (best){ req.agent = best.agent; req.time = best.time; req.dist = best.dist; }
+  else { req.state = 'noagent'; stats.noagent++; }
+  selectReq(req.id);
+  log('Поступила заявка #' + req.id + ': ВС на ' + POINTS[stand].label + ', неисправность «' + fault + '» (нужен: ' + FAULTS[fault].qual + ')');
+  if (req.state === 'noagent'){
+    log('⚠ Заявка #' + req.id + ': нет свободного сотрудника «' + FAULTS[fault].qual + '» в пределах ' + CONFIG.maxTime + ' мин');
+  } else {
+    log('Диспетчер: предложен ' + req.agent.name + ' (' + req.agent.qual + '), путь ~' + fmt(req.time));
+  }
+  renderAll();
+}
+
+function assign(id){
+  const req = requests.find(r => r.id === id);
+  if (!req || req.state !== 'pending') return;
+  if (!req.agent || req.agent.status !== 'free'){
+    const best = findBest(req);
+    if (best){ req.agent = best.agent; req.time = best.time; req.dist = best.dist; }
+    else {
+      req.state = 'noagent'; stats.noagent++;
+      log('⚠ Заявка #' + req.id + ': подходящего сотрудника больше нет');
+      renderAll(); return;
+    }
+  }
+  req.state = 'assigned';
+  req.agent.status = 'assigned';
+  stats.assigned++;
+  log('Диспетчер назначил ' + req.agent.name + ' на заявку #' + req.id);
+  const near = Math.hypot(req.agent.x - POINTS[req.stand].x, req.agent.y - POINTS[req.stand].y);
+  const nearTxt = near <= CONFIG.nearRadius ? ' ВС находится рядом с вами (~' + Math.round(near) + ' м).' : '';
+  addNotification(req.agent,
+    'Заявка #' + req.id + ': ВС на ' + POINTS[req.stand].label + ', неисправность «' + req.fault + '». Время в пути ~' + fmt(req.time) + '.' + nearTxt + ' Приступить к перемещению?',
+    req);
+  renderAll();
+}
+
+function accept(id){
+  const req = requests.find(r => r.id === id);
+  if (!req || req.state !== 'assigned' || !req.agent) return;
+  req.state = 'moving';
+  req.agent.status = 'moving';
+  req.agent.target = req.stand;
+  log(req.agent.name + ' принял заявку #' + req.id + ' и выдвигается к ' + POINTS[req.stand].label);
+  renderAll();
+}
+
+function decline(id){
+  const req = requests.find(r => r.id === id);
+  if (!req || req.state !== 'assigned' || !req.agent) return;
+  const name = req.agent.name;
+  req.agent.status = 'free';
+  req.state = 'rejected';
+  req.agent = null; req.time = null; req.dist = null;
+  stats.rejected++;
+  log(name + ' отложил заявку #' + req.id + ' — отклонена');
+  renderAll();
+}
+
+function rejectReq(id){
+  const req = requests.find(r => r.id === id);
+  if (!req || req.state !== 'pending') return;
+  req.state = 'rejected';
+  stats.rejected++;
+  log('Диспетчер отклонил заявку #' + req.id);
+  renderAll();
+}
+
+/* ---------- controls ---------- */
+function manualRequest(){
+  createRequest(document.getElementById('sel-stand').value, document.getElementById('sel-fault').value);
+}
+function randomRequest(){
+  const stands = ['S1','S2','S3','S4','S5','S6','S7','S8'];
+  const faults = Object.keys(FAULTS);
+  createRequest(stands[Math.floor(Math.random()*stands.length)], faults[Math.floor(Math.random()*faults.length)]);
+}
+function toggleAuto(){
+  auto = document.getElementById('auto').checked;
+  if (auto && !autoTimer) autoTimer = setInterval(randomRequest, 8000);
+  if (!auto && autoTimer){ clearInterval(autoTimer); autoTimer = null; }
+}
+function setSpeed(v){
+  CONFIG.timeScale = parseFloat(v);
+  document.getElementById('speed-label').textContent = v + '×';
+}
+function resetSim(){
+  agents.forEach(a => { a.x = POINTS[a.home].x; a.y = POINTS[a.home].y; a.status = 'free'; a.target = null; a.workLeft = 0; });
+  requests = []; notifications = []; logs = []; nextId = 1; simTime = 0; selectedReq = null;
+  Object.keys(stats).forEach(k => stats[k] = 0);
+  renderAll();
+  log('Симулятор сброшен');
+}
+function selectReq(id){
+  selectedReq = requests.find(r => r.id === id) || null;
+  renderDispatcher();
+}
+
+/* ---------- rendering (DOM) ---------- */
+function renderAll(){ renderDispatcher(); renderNotifications(); renderAgents(); renderLog(); renderStats(); updateClock(); }
+
+function renderDispatcher(){
+  const el = document.getElementById('dispatcher-list');
+  const stTxt = {pending:'Ожидает решения', assigned:'Назначен, ждёт подтверждения', moving:'Сотрудник в пути',
+                 working:'Ремонт…', done:'Выполнено', rejected:'Отклонено', noagent:'Нет подходящего'};
+  const list = [...requests].reverse();
+  el.innerHTML = list.map(r => {
+    const p = POINTS[r.stand];
+    let body = '';
+    if (r.state === 'pending' && r.agent){
+      body = '<div>Предложение: <b>' + r.agent.name + '</b> (' + r.agent.qual + ') · путь ~' + fmt(r.time) + '</div>' +
+        '<div class="btns"><button class="ok" onclick="assign(' + r.id + ')">Назначить</button>' +
+        '<button class="bad" onclick="rejectReq(' + r.id + ')">Отклонить</button></div>';
+    } else if (r.state === 'noagent'){
+      body = '<div style="color:var(--bad)">Нет свободного сотрудника «' + FAULTS[r.fault].qual + '» в пределах ' + CONFIG.maxTime + ' мин</div>';
+    } else if (r.state === 'assigned'){
+      body = '<div>' + r.agent.name + ' уведомлён — ожидает подтверждения</div>';
+    } else if (r.state === 'moving'){
+      body = '<div>' + r.agent.name + ' в пути…</div>';
+    } else if (r.state === 'working'){
+      body = '<div>' + r.agent.name + ' ремонтирует… осталось ~' + Math.ceil(r.workLeft) + ' мин</div>';
+    } else if (r.state === 'done'){
+      body = '<div style="color:var(--ok)">Выполнено' + (r.agent ? ' — ' + r.agent.name : '') + '</div>';
+    } else if (r.state === 'rejected'){
+      body = '<div style="color:var(--bad)">Отклонено</div>';
+    }
+    return '<div class="req ' + (r === selectedReq ? 'selected' : '') + '" onclick="selectReq(' + r.id + ')">' +
+      '<div class="top"><span>#' + r.id + ' · ' + p.label + '</span><span class="badge ' + r.state + '">' + stTxt[r.state] + '</span></div>' +
+      '<div>Неисправность: <b>' + r.fault + '</b></div>' + body + '</div>';
+  }).join('') || '<div style="color:var(--muted)">Заявок пока нет — создайте заявку или включите «Авто»</div>';
+}
+
+function renderNotifications(){
+  const el = document.getElementById('notif-list');
+  const list = [...notifications].reverse();
+  el.innerHTML = list.map(n => {
+    let btns = '';
+    if (n.req && n.req.state === 'assigned'){
+      btns = '<div class="btns"><button class="ok" onclick="accept(' + n.req.id + ')">✅ Приступить</button>' +
+             '<button class="bad" onclick="decline(' + n.req.id + ')">Отложить</button></div>';
+    }
+    return '<div class="notif"><div class="who">📱 Бот · ' + n.agent.name + '</div><div>' + n.text + '</div>' + btns + '</div>';
+  }).join('') || '<div style="color:var(--muted)">Уведомлений нет</div>';
+}
+
+function renderAgents(){
+  const el = document.getElementById('agents-list');
+  const stTxt = {free:'свободен', assigned:'ждёт решения', moving:'в пути', working:'на объекте'};
+  el.innerHTML = agents.map(a =>
+    '<div class="agent-row"><div class="avatar" style="background:' + a.color + '">' + a.name[0] + '</div>' +
+    '<div><b>' + a.name + '</b> · ' + a.qual + '</div>' +
+    '<span class="st ' + a.status + '">' + (stTxt[a.status] || a.status) + '</span></div>'
+  ).join('');
+}
+
+function renderLog(){
+  const el = document.getElementById('log-list');
+  el.innerHTML = [...logs].reverse().map(l => '<div><span class="t">[' + fmt(l.t) + ']</span> ' + l.msg + '</div>').join('');
+}
+
+function renderStats(){
+  document.getElementById('st-total').textContent = stats.total;
+  document.getElementById('st-assigned').textContent = stats.assigned;
+  document.getElementById('st-done').textContent = stats.done;
+  document.getElementById('st-rejected').textContent = stats.rejected;
+  document.getElementById('st-noagent').textContent = stats.noagent;
+}
+
+function updateClock(){
+  document.getElementById('clock').textContent = fmt(simTime);
+}
+
+/* ---------- canvas drawing ---------- */
+function drawPlane(x, y, s, color){
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(s, s);
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.ellipse(0, 0, 16, 4.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(2,-3); ctx.lineTo(12,-11); ctx.lineTo(14,-3); ctx.lineTo(4,3); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(2,3); ctx.lineTo(12,11); ctx.lineTo(14,3); ctx.lineTo(4,-3); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-14,-3); ctx.lineTo(-22,-9); ctx.lineTo(-18,0); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-14,3); ctx.lineTo(-22,9); ctx.lineTo(-18,0); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+function drawBase(k){
+  const p = POINTS[k];
+  ctx.fillStyle = '#475569';
+  ctx.fillRect(p.x - 45, p.y - 30, 90, 60);
+  ctx.strokeStyle = '#64748b'; ctx.lineWidth = 2;
+  ctx.strokeRect(p.x - 45, p.y - 30, 90, 60);
+  ctx.fillStyle = '#e2e8f0'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(p.label, p.x, p.y - 4);
+  ctx.fillStyle = '#94a3b8'; ctx.font = '9px sans-serif';
+  ctx.fillText('контрольная точка', p.x, p.y + 14);
+}
+
+function drawStand(k){
+  const p = POINTS[k];
+  ctx.fillStyle = '#2e3b4d';
+  ctx.fillRect(p.x - 30, p.y - 22, 60, 44);
+  ctx.strokeStyle = '#475569'; ctx.lineWidth = 1.5;
+  ctx.strokeRect(p.x - 30, p.y - 22, 60, 44);
+  drawPlane(p.x, p.y, 1.1, '#cbd5e1');
+  ctx.fillStyle = '#f8fafc'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(k, p.x, p.y - 30);
+  ctx.fillStyle = '#94a3b8'; ctx.font = '9px sans-serif';
+  ctx.fillText('стоянка', p.x, p.y + 30);
+}
+
+function drawReach(){
+  const R = CONFIG.speed * CONFIG.maxTime;
+  for (const a of agents){
+    if (a.status !== 'free') continue;
+    ctx.strokeStyle = 'rgba(34,197,94,.16)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 6]);
+    ctx.beginPath(); ctx.arc(a.x, a.y, R, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+function drawRoutes(){
+  for (const r of requests){
+    if (!r.agent || !['pending','assigned','moving'].includes(r.state)) continue;
+    const a = r.agent, p = POINTS[r.stand];
+    const sel = r === selectedReq;
+    ctx.strokeStyle = sel ? '#38bdf8' : 'rgba(56,189,248,.35)';
+    ctx.lineWidth = sel ? 3 : 2;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+    ctx.setLineDash([]);
+    if (sel){
+      const ang = Math.atan2(p.y - a.y, p.x - a.x);
+      const mx = (a.x + p.x) / 2, my = (a.y + p.y) / 2;
+      ctx.save(); ctx.translate(mx, my); ctx.rotate(ang);
+      ctx.fillStyle = '#38bdf8';
+      ctx.beginPath(); ctx.moveTo(8, 0); ctx.lineTo(-4, -6); ctx.lineTo(-4, 6); ctx.closePath(); ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = '#38bdf8'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('~' + fmt(r.time), mx, my - 10);
+    }
+  }
+}
+
+function drawAgent(a){
+  const r = 11;
+  ctx.fillStyle = 'rgba(0,0,0,.35)';
+  ctx.beginPath(); ctx.arc(a.x + 2, a.y + 2, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = a.color;
+  ctx.beginPath(); ctx.arc(a.x, a.y, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(a.x, a.y, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(a.name[0], a.x, a.y);
+  const col = a.status === 'free' ? '#22c55e' : (a.status === 'working' ? '#f59e0b' : '#38bdf8');
+  ctx.strokeStyle = col; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(a.x, a.y, r + 4, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = '#e2e8f0'; ctx.font = '11px sans-serif'; ctx.textBaseline = 'top';
+  ctx.fillText(a.name, a.x, a.y + r + 8);
+  ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif';
+  ctx.fillText(a.qual, a.x, a.y + r + 20);
+}
+
+function draw(){
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#22303f'; ctx.fillRect(0, 0, W, H);
+  // сетка
+  ctx.strokeStyle = 'rgba(148,163,184,.06)'; ctx.lineWidth = 1;
+  for (let x = 0; x <= W; x += 100){ ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y <= H; y += 100){ ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+  // ВПП
+  ctx.fillStyle = '#2f3b4d'; ctx.fillRect(60, 70, 1080, 46);
+  ctx.strokeStyle = '#cbd5e1'; ctx.setLineDash([18, 14]); ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(80, 93); ctx.lineTo(1120, 93); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#94a3b8'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('ВПП', 600, 64);
+  // рулёжная дорожка
+  ctx.fillStyle = '#2b3748'; ctx.fillRect(60, 150, 1080, 30);
+  ctx.fillStyle = '#94a3b8'; ctx.fillText('Рулёжная дорожка', 600, 144);
+  // перрон
+  ctx.fillStyle = '#263241'; ctx.fillRect(120, 270, 620, 70);
+  ctx.fillStyle = '#94a3b8'; ctx.fillText('Перрон (стоянки ВС)', 430, 264);
+  // терминал
+  ctx.fillStyle = '#334155'; ctx.fillRect(60, 220, 120, 40);
+  ctx.fillStyle = '#e2e8f0'; ctx.fillText('Терминал', 120, 245);
+  // базы и стоянки
+  drawBase('TC'); drawBase('Hangar');
+  for (const k in POINTS) if (POINTS[k].kind === 'stand') drawStand(k);
+  drawReach();
+  drawRoutes();
+  for (const a of agents) drawAgent(a);
+}
+
+/* ---------- main loop ---------- */
+let last = performance.now();
+function loop(now){
+  const dt = Math.min((now - last) / 1000, 0.1);
+  last = now;
+  const dtMin = dt / 60 * CONFIG.timeScale;
+  simTime += dtMin;
+  for (const a of agents){
+    if (a.status === 'moving' && a.target){
+      const p = POINTS[a.target];
+      const d = Math.hypot(p.x - a.x, p.y - a.y);
+      if (d < 2){
+        a.x = p.x; a.y = p.y;
+        const req = requests.find(r => r.agent === a && r.state === 'moving');
+        if (req){
+          req.state = 'working'; req.workLeft = FAULTS[req.fault].work;
+          a.status = 'working';
+          log(a.name + ' прибыл на ' + p.label + ' (заявка #' + req.id + '), приступил к ремонту');
+          renderAll();
+        }
+      } else {
+        const step = CONFIG.speed * dtMin;
+        a.x += (p.x - a.x) / d * step;
+        a.y += (p.y - a.y) / d * step;
+      }
+    } else if (a.status === 'working'){
+      const req = requests.find(r => r.agent === a && r.state === 'working');
+      if (req){
+        req.workLeft -= dtMin;
+        if (req.workLeft <= 0){
+          req.state = 'done'; req.workLeft = 0;
+          a.status = 'free'; a.target = null;
+          stats.done++;
+          log('✅ ' + a.name + ' завершил заявку #' + req.id + ' на ' + POINTS[req.stand].label);
+          renderAll();
+        }
+      }
+    }
+  }
+  draw();
+  updateClock();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+renderAll();
+log('Симулятор запущен. Создайте заявку или включите «Авто».');
+</script>
+</body>
+</html>
